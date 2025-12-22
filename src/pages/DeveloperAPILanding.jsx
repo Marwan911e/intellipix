@@ -66,9 +66,10 @@ function DeveloperAPILanding() {
       navigate("/developer");
       return;
     }
-    
+
     if (tierId === "api-enterprise") {
-      window.location.href = "mailto:sales@intellipix.com?subject=Enterprise API Plan Inquiry";
+      window.location.href =
+        "mailto:sales@intellipix.com?subject=Enterprise API Plan Inquiry";
       return;
     }
 
@@ -194,7 +195,8 @@ function DeveloperAPILanding() {
                 Easy Integration
               </h3>
               <p className="text-gray-600 text-sm font-light leading-relaxed">
-                Simple REST API with comprehensive documentation and code examples
+                Simple REST API with comprehensive documentation and code
+                examples
               </p>
             </div>
           </div>
@@ -202,7 +204,10 @@ function DeveloperAPILanding() {
       </div>
 
       {/* Pricing Section */}
-      <div id="pricing" className="min-h-screen bg-gray-50 border-t border-gray-200 flex items-center py-20">
+      <div
+        id="pricing"
+        className="min-h-screen bg-gray-50 border-t border-gray-200 flex items-center py-20"
+      >
         <div className="max-w-7xl mx-auto px-6 w-full">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-light text-gray-900 mb-4">
@@ -295,11 +300,12 @@ function DeveloperAPILanding() {
         </div>
       </div>
 
-
       {/* CTA Section */}
       <div className="min-h-[50vh] bg-gray-900 text-white flex items-center">
         <div className="max-w-7xl mx-auto px-6 py-16 text-center w-full">
-          <h2 className="text-3xl md:text-4xl font-light mb-4">Ready to Get Started?</h2>
+          <h2 className="text-3xl md:text-4xl font-light mb-4">
+            Ready to Get Started?
+          </h2>
           <p className="text-gray-300 mb-8 max-w-2xl mx-auto font-light">
             Start compressing images with our API in minutes. No credit card
             required for the free trial.
@@ -380,4 +386,3 @@ function DeveloperAPILanding() {
 }
 
 export default DeveloperAPILanding;
-
