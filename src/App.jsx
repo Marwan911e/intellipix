@@ -5,6 +5,8 @@ import Landing from "./pages/Landing";
 import Upload from "./pages/Upload";
 import Pricing from "./pages/Pricing";
 import Account from "./pages/Account";
+import DeveloperAPI from "./pages/DeveloperAPI";
+import DeveloperAPILanding from "./pages/DeveloperAPILanding";
 import { authAPI } from "./services/api";
 
 function App() {
@@ -84,6 +86,17 @@ function App() {
               element={<Pricing user={user} onUpgrade={() => checkAuth()} />}
             />
             <Route path="/account" element={<Account user={user} />} />
+            <Route
+              path="/developer"
+              element={
+                user ? (
+                  <DeveloperAPI user={user} />
+                ) : (
+                  <DeveloperAPILanding />
+                )
+              }
+            />
+            <Route path="/api" element={<DeveloperAPILanding />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
