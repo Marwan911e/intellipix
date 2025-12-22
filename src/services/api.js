@@ -151,4 +151,37 @@ export const compressAPI = {
   },
 };
 
+// Developer API methods
+export const developerAPI = {
+  // List all API keys
+  listKeys: async () => {
+    const response = await api.get("/api/dev/keys");
+    return response.data;
+  },
+
+  // Create a new API key
+  createKey: async (name) => {
+    const response = await api.post("/api/dev/keys", { name });
+    return response.data;
+  },
+
+  // Revoke an API key
+  revokeKey: async (keyId) => {
+    const response = await api.delete(`/api/dev/keys/${keyId}`);
+    return response.data;
+  },
+
+  // Get API key statistics
+  getStats: async (keyId) => {
+    const response = await api.get(`/api/dev/stats?id=${keyId}`);
+    return response.data;
+  },
+
+  // Get API usage logs
+  getUsage: async (keyId) => {
+    const response = await api.get(`/api/dev/usage?id=${keyId}`);
+    return response.data;
+  },
+};
+
 export default api;
