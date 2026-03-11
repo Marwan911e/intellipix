@@ -159,7 +159,7 @@ function Landing() {
                 Upload Your Image
               </h3>
               <p className="text-sm text-gray-500 font-light">
-                Select or drag and drop your PNG or JPEG image
+                Select or drag and drop your PNG, JPEG, WebP, or BMP image
               </p>
             </div>
             <div className="text-center">

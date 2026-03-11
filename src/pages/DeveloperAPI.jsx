@@ -236,6 +236,7 @@ function DeveloperAPI({ user }) {
                   placeholder="Enter a name for this API key (e.g., Production, Development)"
                   className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-sm"
                   disabled={creating}
+                  autoComplete="on"
                 />
                 <button
                   type="submit"
@@ -621,7 +622,7 @@ function DeveloperAPI({ user }) {
                       required
                     </span>
                     <p className="text-sm text-gray-600 mt-1">
-                      Image file (PNG or JPEG)
+                      Image file (PNG, JPEG, WebP, or BMP)
                     </p>
                   </li>
                   <li className="bg-gray-50 p-3 rounded">
