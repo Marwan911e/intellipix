@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Crown } from "lucide-react";
+import { Crown, X, Layers } from "lucide-react";
 import TrialStatus from "../components/TrialStatus";
 import Payment from "../components/Payment";
 import { userAPI, compressAPI } from "../services/api";
@@ -8,11 +8,23 @@ import { userAPI, compressAPI } from "../services/api";
 function Upload({ user }) {
   const navigate = useNavigate();
   const [trialStatus, setTrialStatus] = useState(null);
+  
+  // Mode selection
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  
+  // Single file mode states
   const [selectedFile, setSelectedFile] = useState(null);
   const [originalSize, setOriginalSize] = useState(null);
   const [compressedSize, setCompressedSize] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [compressedBlobUrl, setCompressedBlobUrl] = useState(null);
+  
+  // Batch mode states
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [batchOriginalSize, setBatchOriginalSize] = useState(0);
+  const [batchCompressedBlobUrl, setBatchCompressedBlobUrl] = useState(null);
+  
+  // Common states
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [targetReduction, setTargetReduction] = useState(40);
@@ -40,15 +52,22 @@ function Upload({ user }) {
   }, [user, loadTrialStatus]);
 
   const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      processFile(file);
+    if (isBatchMode) {
+      const files = Array.from(e.target.files);
+      if (files.length > 0) {
+        processFiles(files);
+      }
+    } else {
+      const file = e.target.files[0];
+      if (file) {
+        processFile(file);
+      }
     }
   };
 
   const processFile = (file) => {
-    if (!file.type.match(/^image\/(png|jpeg|jpg)$/)) {
-      setError("Please select a PNG or JPEG image");
+    if (!file.type.match(/^image\/(png|jpeg|jpg|webp|bmp)$/)) {
+      setError("Please select a PNG, JPEG, WebP, or BMP image");
       return;
     }
 
@@ -58,6 +77,60 @@ function Upload({ user }) {
     setCompressedSize(null);
     setCompressedBlobUrl(null);
     setError(null);
+  };
+
+  const processFiles = (files) => {
+    // Filter valid image files
+    const validFiles = files.filter((file) =>
+      file.type.match(/^image\/(png|jpeg|jpg|webp|bmp)$/)
+    );
+
+    if (validFiles.length === 0) {
+      setError("Please select valid PNG, JPEG, WebP, or BMP images");
+      return;
+    }
+
+    if (validFiles.length !== files.length) {
+      setError(
+        `${
+          files.length - validFiles.length
+        } file(s) skipped (only PNG/JPEG/WebP/BMP supported)`
+      );
+    }
+
+    lastCompressedRef.current = { file: null, reduction: null };
+    setSelectedFiles(validFiles);
+    const totalSize = validFiles.reduce((sum, file) => sum + file.size, 0);
+    setBatchOriginalSize(totalSize);
+    setBatchCompressedBlobUrl(null);
+    if (validFiles.length === files.length) {
+      setError(null);
+    }
+  };
+
+  const removeFile = (index) => {
+    const newFiles = selectedFiles.filter((_, i) => i !== index);
+    setSelectedFiles(newFiles);
+    const totalSize = newFiles.reduce((sum, file) => sum + file.size, 0);
+    setBatchOriginalSize(totalSize);
+    if (newFiles.length === 0) {
+      setBatchCompressedBlobUrl(null);
+      setError(null);
+    }
+  };
+
+  const switchMode = (batch) => {
+    setIsBatchMode(batch);
+    // Reset states
+    setSelectedFile(null);
+    setSelectedFiles([]);
+    setOriginalSize(null);
+    setBatchOriginalSize(0);
+    setCompressedSize(null);
+    setCompressedBlobUrl(null);
+    setBatchCompressedBlobUrl(null);
+    setError(null);
+    lastCompressedRef.current = { file: null, reduction: null };
   };
 
   const handleDragOver = (e) => {
@@ -73,13 +146,24 @@ function Upload({ user }) {
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      processFile(file);
+    if (isBatchMode) {
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) {
+        processFiles(files);
+      }
+    } else {
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        processFile(file);
+      }
     }
   };
 
   const handleCompress = useCallback(async () => {
+    if (isBatchMode) {
+      return handleBatchCompress();
+    }
+
     if (!selectedFile || !originalSize) {
       setError("Please select an image first");
       return;
@@ -119,10 +203,14 @@ function Upload({ user }) {
         }, 100);
       }
     } catch (err) {
-      const errorMessage =
-        err.response?.data ||
-        err.message ||
-        "An error occurred during compression";
+      // Ensure errorMessage is always a string, not a Blob
+      let errorMessage = err.message || "An error occurred during compression";
+      
+      // If response data is a Blob, ignore it and use error message
+      if (err.response?.data && !(err.response.data instanceof Blob)) {
+        errorMessage = err.response.data;
+      }
+      
       if (
         typeof errorMessage === "string" &&
         errorMessage.includes("Trial limit exceeded")
@@ -131,7 +219,7 @@ function Upload({ user }) {
           "Trial limit exceeded. Images will be watermarked. Upgrade to remove watermark."
         );
       } else {
-        setError(errorMessage);
+        setError(typeof errorMessage === "string" ? errorMessage : "An error occurred during compression");
       }
       lastCompressedRef.current = { file: null, reduction: null };
     } finally {
@@ -139,6 +227,7 @@ function Upload({ user }) {
       isCompressingRef.current = false;
     }
   }, [
+    isBatchMode,
     selectedFile,
     originalSize,
     targetReduction,
@@ -147,11 +236,97 @@ function Upload({ user }) {
     compressedBlobUrl,
   ]);
 
-  useEffect(() => {
-    if (!selectedFile || !originalSize || loading || isCompressingRef.current)
+  const handleBatchCompress = useCallback(async () => {
+    if (selectedFiles.length === 0) {
+      setError("Please select images first");
       return;
+    }
 
-    const fileKey = `${selectedFile.name}-${selectedFile.size}-${targetReduction}`;
+    const fileKey = selectedFiles.map((f) => f.name).join(",") + "-" + targetReduction;
+    if (
+      lastCompressedRef.current.file === fileKey &&
+      isCompressingRef.current === false
+    ) {
+      return;
+    }
+
+    if (isCompressingRef.current) {
+      return;
+    }
+
+    isCompressingRef.current = true;
+    lastCompressedRef.current = { file: fileKey, reduction: targetReduction };
+    setLoading(true);
+    setError(null);
+
+    if (batchCompressedBlobUrl) {
+      URL.revokeObjectURL(batchCompressedBlobUrl);
+      setBatchCompressedBlobUrl(null);
+    }
+
+    try {
+      const blob = await compressAPI.compressBatch(selectedFiles, targetReduction);
+      const blobUrl = URL.createObjectURL(blob);
+      setBatchCompressedBlobUrl(blobUrl);
+
+      if (user) {
+        setTimeout(() => {
+          loadTrialStatus(user);
+        }, 100);
+      }
+    } catch (err) {
+      // Ensure errorMessage is always a string, not a Blob
+      let errorMessage = err.message || "An error occurred during batch compression";
+      
+      // If response data is a Blob, ignore it and use error message
+      if (err.response?.data && !(err.response.data instanceof Blob)) {
+        errorMessage = err.response.data;
+      }
+      
+      if (
+        typeof errorMessage === "string" &&
+        errorMessage.includes("Trial limit exceeded")
+      ) {
+        setError(
+          "Trial limit exceeded. Images will be watermarked. Upgrade to remove watermark."
+        );
+      } else {
+        setError(typeof errorMessage === "string" ? errorMessage : "An error occurred during batch compression");
+      }
+      lastCompressedRef.current = { file: null, reduction: null };
+    } finally {
+      setLoading(false);
+      isCompressingRef.current = false;
+    }
+  }, [
+    selectedFiles,
+    targetReduction,
+    user,
+    loadTrialStatus,
+    batchCompressedBlobUrl,
+  ]);
+
+  useEffect(() => {
+    // Single file mode
+    if (
+      !isBatchMode &&
+      (!selectedFile || !originalSize || loading || isCompressingRef.current)
+    ) {
+      return;
+    }
+
+    // Batch mode
+    if (
+      isBatchMode &&
+      (selectedFiles.length === 0 || loading || isCompressingRef.current)
+    ) {
+      return;
+    }
+
+    const fileKey = isBatchMode
+      ? selectedFiles.map((f) => f.name).join(",") + "-" + targetReduction
+      : `${selectedFile.name}-${selectedFile.size}-${targetReduction}`;
+      
     if (lastCompressedRef.current.file === fileKey) {
       return;
     }
@@ -160,7 +335,11 @@ function Upload({ user }) {
       clearTimeout(compressionTimeoutRef.current);
     }
 
-    const delay = compressedSize !== null ? 500 : 0;
+    const delay = 
+      (!isBatchMode && compressedSize !== null) || 
+      (isBatchMode && batchCompressedBlobUrl !== null) 
+        ? 500 
+        : 0;
 
     compressionTimeoutRef.current = setTimeout(() => {
       if (
@@ -177,16 +356,21 @@ function Upload({ user }) {
       }
     };
   }, [
+    isBatchMode,
     selectedFile,
+    selectedFiles,
     originalSize,
     targetReduction,
     handleCompress,
     loading,
     compressedSize,
+    batchCompressedBlobUrl,
   ]);
 
   const handleDownload = () => {
-    if (compressedBlobUrl) {
+    if (isBatchMode && batchCompressedBlobUrl) {
+      setShowDownloadModal(true);
+    } else if (!isBatchMode && compressedBlobUrl) {
       setShowDownloadModal(true);
     }
   };
@@ -205,8 +389,15 @@ function Upload({ user }) {
       }
     }
 
-    // Download the image (backend already determined watermark based on user status)
-    if (compressedBlobUrl) {
+    // Download the file (backend already determined watermark based on user status)
+    if (isBatchMode && batchCompressedBlobUrl) {
+      const link = document.createElement("a");
+      link.href = batchCompressedBlobUrl;
+      link.download = "compressed_images.zip";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (!isBatchMode && compressedBlobUrl) {
       const link = document.createElement("a");
       link.href = compressedBlobUrl;
       link.download = "compressed.jpg";
@@ -247,7 +438,7 @@ function Upload({ user }) {
         <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-12 py-8">
           <div
             className={`flex flex-col ${
-              selectedFile
+              selectedFile || selectedFiles.length > 0
                 ? "lg:flex-row items-start"
                 : "items-center justify-center"
             } gap-8 lg:gap-12`}
@@ -255,7 +446,7 @@ function Upload({ user }) {
             {/* Left Column - Upload & Controls */}
             <div
               className={`w-full ${
-                selectedFile ? "lg:w-1/2 lg:max-w-lg" : "max-w-md"
+                selectedFile || selectedFiles.length > 0 ? "lg:w-1/2 lg:max-w-lg" : "max-w-md"
               }`}
             >
               {/* Trial Status for authenticated users */}
@@ -266,6 +457,31 @@ function Upload({ user }) {
                 />
               )}
 
+              {/* Mode Toggle */}
+              <div className="mb-6 flex items-center justify-center gap-2 p-1 bg-gray-100 rounded-lg">
+                <button
+                  onClick={() => switchMode(false)}
+                  className={`flex-1 py-2 px-4 rounded-md text-sm font-light transition-all ${
+                    !isBatchMode
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Single Image
+                </button>
+                <button
+                  onClick={() => switchMode(true)}
+                  className={`flex-1 py-2 px-4 rounded-md text-sm font-light transition-all flex items-center justify-center gap-2 ${
+                    isBatchMode
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  Batch Upload
+                </button>
+              </div>
+
               {/* File Upload Area */}
               <div className="mb-6">
                 <div
@@ -275,14 +491,15 @@ function Upload({ user }) {
                   className={`border border-gray-200 rounded-lg p-8 md:p-12 text-center transition-all duration-300 ${
                     isDragging
                       ? "border-gray-400 bg-gray-50"
-                      : selectedFile
+                      : selectedFile || selectedFiles.length > 0
                       ? "border-gray-300"
                       : "hover:border-gray-300"
                   }`}
                 >
                   <input
                     type="file"
-                    accept="image/png,image/jpeg,image/jpg"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp"
+                    multiple={isBatchMode}
                     onChange={handleFileSelect}
                     className="hidden"
                     id="file-upload"
@@ -291,31 +508,40 @@ function Upload({ user }) {
                     htmlFor="file-upload"
                     className="cursor-pointer flex flex-col items-center justify-center"
                   >
-                    <svg
-                      className="w-10 h-10 text-gray-400 mb-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                      />
-                    </svg>
+                    {isBatchMode ? (
+                      <Layers className="w-10 h-10 text-gray-400 mb-4" />
+                    ) : (
+                      <svg
+                        className="w-10 h-10 text-gray-400 mb-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        strokeWidth={1.5}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                        />
+                      </svg>
+                    )}
                     <span className="text-gray-600 text-sm font-light mb-1">
-                      {selectedFile
+                      {isBatchMode
+                        ? selectedFiles.length > 0
+                          ? "Add More Images"
+                          : "Drop images here or click to browse"
+                        : selectedFile
                         ? "Change Image"
                         : "Drop image here or click to browse"}
                     </span>
                     <span className="text-gray-400 text-xs font-light">
-                      PNG or JPEG
+                      PNG, JPEG, WebP, or BMP {isBatchMode && "(multiple files)"}
                     </span>
                   </label>
                 </div>
 
-                {selectedFile && (
+                {/* Single file display */}
+                {!isBatchMode && selectedFile && (
                   <div className="mt-4 flex items-center justify-between py-3 px-4 border-b border-gray-100">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-900 font-light truncate">
@@ -327,10 +553,43 @@ function Upload({ user }) {
                     </div>
                   </div>
                 )}
+
+                {/* Batch files display */}
+                {isBatchMode && selectedFiles.length > 0 && (
+                  <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
+                    {selectedFiles.map((file, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between py-2 px-3 border border-gray-100 rounded-lg hover:border-gray-200 transition-colors"
+                      >
+                        <div className="flex-1 min-w-0 mr-3">
+                          <p className="text-sm text-gray-900 font-light truncate">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-gray-500 font-light mt-0.5">
+                            {formatFileSize(file.size)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="pt-2 border-t border-gray-100">
+                      <p className="text-sm text-gray-600 font-light">
+                        Total: {selectedFiles.length} file(s) •{" "}
+                        {formatFileSize(batchOriginalSize)}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Size Reduction Control */}
-              {selectedFile && originalSize && (
+              {((selectedFile && originalSize) || (isBatchMode && selectedFiles.length > 0)) && (
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-4">
                     <label className="text-sm text-gray-600 font-light">
@@ -396,10 +655,10 @@ function Upload({ user }) {
             </div>
 
             {/* Right Column - Results */}
-            {selectedFile && (
+            {(selectedFile || selectedFiles.length > 0) && (
               <div className="w-full lg:w-1/2 lg:max-w-lg">
-                {/* Compression Results */}
-                {compressedSize && (
+                {/* Compression Results - Single Mode */}
+                {!isBatchMode && compressedSize && (
                   <div className="mb-6 space-y-4">
                     <div className="flex items-center justify-between py-3 border-b border-gray-100">
                       <span className="text-sm text-gray-600 font-light">
@@ -430,8 +689,51 @@ function Upload({ user }) {
                   </div>
                 )}
 
-                {/* Download Button */}
-                {compressedBlobUrl && (
+                {/* Compression Results - Batch Mode */}
+                {isBatchMode && batchCompressedBlobUrl && (
+                  <div className="mb-6 space-y-4">
+                    <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                      <span className="text-sm text-gray-600 font-light">
+                        Files Processed
+                      </span>
+                      <span className="text-sm text-gray-900 font-light">
+                        {selectedFiles.length} file(s)
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-3 border-b border-gray-100">
+                      <span className="text-sm text-gray-600 font-light">
+                        Original Size
+                      </span>
+                      <span className="text-sm text-gray-900 font-light">
+                        {formatFileSize(batchOriginalSize)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-4">
+                      <span className="text-sm text-gray-600 font-light">
+                        Status
+                      </span>
+                      <span className="text-sm text-green-600 font-light flex items-center gap-1">
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          strokeWidth={2}
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M5 13l4 4L19 7"
+                          />
+                        </svg>
+                        Ready
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Download Button - Single Mode */}
+                {!isBatchMode && compressedBlobUrl && (
                   <button
                     onClick={handleDownload}
                     className="w-full bg-gray-900 text-white py-3.5 px-6 rounded-lg
@@ -452,6 +754,31 @@ function Upload({ user }) {
                       />
                     </svg>
                     <span>Download</span>
+                  </button>
+                )}
+
+                {/* Download Button - Batch Mode */}
+                {isBatchMode && batchCompressedBlobUrl && (
+                  <button
+                    onClick={handleDownload}
+                    className="w-full bg-gray-900 text-white py-3.5 px-6 rounded-lg
+                  text-sm font-light tracking-wide hover:bg-gray-800
+                  transition-all duration-200 flex items-center justify-center space-x-2"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      strokeWidth={1.5}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25-2.25M12 13.875l-2.25-2.25M12 13.875V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
+                      />
+                    </svg>
+                    <span>Download ZIP</span>
                   </button>
                 )}
               </div>

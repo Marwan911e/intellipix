@@ -149,6 +149,58 @@ export const compressAPI = {
       throw error;
     }
   },
+
+  // Compress multiple images in batch
+  compressBatch: async (files, targetReduction) => {
+    const formData = new FormData();
+    
+    // Append all files
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
+    
+    if (targetReduction !== undefined) {
+      formData.append("targetReduction", targetReduction.toString());
+    }
+
+    try {
+      const token = localStorage.getItem("auth_token");
+      const config = {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+        responseType: "blob",
+        withCredentials: true,
+      };
+
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await api.post("/api/compress/batch", formData, config);
+
+      // Check if response is actually an error (JSON error in blob)
+      if (response.data.type === "application/json") {
+        const text = await response.data.text();
+        const error = JSON.parse(text);
+        throw new Error(error.error || "Batch compression failed");
+      }
+
+      return response.data;
+    } catch (error) {
+      // If it's a blob error response, try to parse it
+      if (error.response?.data instanceof Blob) {
+        try {
+          const text = await error.response.data.text();
+          const errorData = JSON.parse(text);
+          throw new Error(errorData.error || "Batch compression failed");
+        } catch (parseError) {
+          throw error;
+        }
+      }
+      throw error;
+    }
+  },
 };
 
 // Developer API methods
